@@ -4,6 +4,14 @@
 
 Switch between Claude Code, Gemini, Cursor, and Codex without losing context. Decisions you made last week, procedures you discovered yesterday, the architecture rationale from three months ago: it's all there when you need it.
 
+## Remote setup with environment variables
+
+For this fork, use its repository and the `codex-plugin-fix` branch when adding the marketplace. If Codex already has `nowledge-community` registered from upstream, replace that source before adding the fork. The plugin ID remains `nowledge-mem@nowledge-community`.
+
+Set `NMEM_API_URL` to your Nowledge Mem origin, such as `https://mem.example.com`, and set `NMEM_API_KEY` in the environment that starts Codex. Run the installed `scripts/install_hooks.py` with Python 3.11 or newer. Setup tries `/remote-api/mcp/` and `/mcp` and writes the selected address for Codex's native HTTP MCP client. A full MCP endpoint skips discovery. Codex reads the key from the environment at runtime.
+
+Rerun setup if the server address changes. After setup or key rotation, restart Codex so its background process can read the variables. Setup updates its own managed MCP block and preserves an existing user-written override. For a first migration from a user-written override, remove its connection block before running setup.
+
 ## What you get
 
 - **Pick up where you left off.** A native SessionStart hook injects your Context Bundle automatically, with Working Memory as fallback, while SubagentStart selectively gives context-heavy roles a bounded context snapshot.
@@ -370,7 +378,7 @@ Use `-p /path/to/project` instead of `--all-projects` when you only want one pro
 
 On current Codex builds, enabled plugins contribute `hooks/hooks.json` automatically. Older builds may still need `plugin_hooks = true`; the setup script detects that from `codex features list`. In `/hooks`, the Nowledge Mem SessionStart, SubagentStart, UserPromptSubmit, and Stop hooks should be both enabled and trusted.
 
-The same setup asks `nmem` for a Codex MCP config and writes a managed `mcp_servers.nowledge-mem` block into `~/.codex/config.toml`. Besides remote URL and authentication, this block maps `NMEM_AGENT_ID`, `NMEM_HOST_AGENT_ID`, and `NMEM_SPACE` through Codex's native environment-backed HTTP headers. A named Raft/Codex worker therefore appears automatically under **Context → AI Identities**, and its MCP searches and writes use that identity's configured default Space. Existing user-owned MCP blocks are never replaced.
+Setup writes a managed `mcp_servers.nowledge-mem` block into `~/.codex/config.toml`. It discovers the endpoint from `NMEM_API_URL` when set, or uses the MCP configuration returned by `nmem`. It can forward `NMEM_AGENT_ID`, `NMEM_HOST_AGENT_ID`, and `NMEM_SPACE` through Codex's environment-backed HTTP headers. A named Raft/Codex worker therefore appears automatically under **Context → AI Identities**, and its MCP searches and writes use that identity's configured default Space. Existing user-owned MCP connection blocks are preserved.
 
 The package still includes a local fallback MCP server at `http://127.0.0.1:14242/mcp`, but its static plugin manifest cannot resolve process-specific environment values. Rerun `scripts/install_hooks.py` after updating the plugin so named agents receive the identity-aware managed block.
 

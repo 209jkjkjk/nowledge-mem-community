@@ -65,6 +65,7 @@ for (const file of [
   "AGENTS.md",
   "hooks/hooks.json",
   "hooks/nmem-context.py",
+  "hooks/nmem_endpoint.py",
   "hooks/nmem_runtime.py",
   "hooks/nmem_stop_maintenance.py",
   "hooks/nmem_pending.py",
@@ -165,17 +166,18 @@ if (hooks) {
   const sessionStartHooks = hooks.hooks?.SessionStart;
   const subagentStartHooks = hooks.hooks?.SubagentStart;
   const promptHooks = hooks.hooks?.UserPromptSubmit;
+  const windowsCommandPrefix = 'cmd.exe /d /s /c --% "';
   if (!Array.isArray(sessionStartHooks)) fail("hooks/hooks.json must declare SessionStart hooks");
   else if (!JSON.stringify(sessionStartHooks).includes("nmem-context.py")) fail("SessionStart must load Nowledge context");
-  else if (!sessionStartHooks[0]?.hooks?.[0]?.commandWindows?.startsWith("py -3 -c ")) fail("SessionStart Windows hook must prefer py -3");
+  else if (!sessionStartHooks[0]?.hooks?.[0]?.commandWindows?.startsWith(windowsCommandPrefix + "py -3 -c ")) fail("SessionStart Windows hook must prefer py -3 through cmd.exe");
   else ok("SessionStart context injection");
   if (!Array.isArray(subagentStartHooks)) fail("hooks/hooks.json must declare SubagentStart hooks");
   else if (!JSON.stringify(subagentStartHooks).includes("nmem-context.py")) fail("SubagentStart must run selective Nowledge bootstrap");
-  else if (!subagentStartHooks[0]?.hooks?.[0]?.commandWindows?.startsWith("py -3 -c ")) fail("SubagentStart Windows hook must prefer py -3");
+  else if (!subagentStartHooks[0]?.hooks?.[0]?.commandWindows?.startsWith(windowsCommandPrefix + "py -3 -c ")) fail("SubagentStart Windows hook must prefer py -3 through cmd.exe");
   else ok("SubagentStart selective bootstrap");
   if (!Array.isArray(promptHooks)) fail("hooks/hooks.json must declare UserPromptSubmit hooks");
   else if (!JSON.stringify(promptHooks).includes("nmem-context.py")) fail("UserPromptSubmit must inject memory routing");
-  else if (!promptHooks[0]?.hooks?.[0]?.commandWindows?.startsWith("py -3 -c ")) fail("UserPromptSubmit Windows hook must prefer py -3");
+  else if (!promptHooks[0]?.hooks?.[0]?.commandWindows?.startsWith(windowsCommandPrefix + "py -3 -c ")) fail("UserPromptSubmit Windows hook must prefer py -3 through cmd.exe");
   else ok("UserPromptSubmit memory routing");
   if (!Array.isArray(stopHooks)) fail("hooks/hooks.json must declare Stop hooks");
   else {
@@ -220,18 +222,12 @@ if (hooks) {
     if (commands.some((command) => command.includes("$HOME/.codex/hooks/nowledge-mem-stop-save.py"))) {
       fail("Stop hook command must not branch on $HOME in shell");
     } else ok("Stop hook stable fallback lives in launcher");
-    if (!windowsCommands.some((command) => command.includes("python -c \"import os, runpy, sys"))) {
-      fail("Stop hook must declare a Windows command using python");
-    } else ok("Stop hook Windows Python launcher");
-    if (!windowsCommands.some((command) => command.includes("py -3 -c \"import os, runpy, sys"))) {
-      fail("Stop hook must declare a Windows py launcher fallback");
-    } else ok("Stop hook Windows py fallback");
-    if (!windowsCommands.some((command) => command.startsWith("py -3 -c "))) {
-      fail("Stop hook Windows command must prefer the Python launcher over Store aliases");
-    } else ok("Stop hook Windows launcher order");
-    if (!windowsCommands.some((command) => command.includes("python3 -c \"import os, runpy, sys"))) {
-      fail("Stop hook must declare a Windows python3 fallback");
-    } else ok("Stop hook Windows python3 fallback");
+    const capture = windowsCommands.find((command) => command.includes("nmem-stop-launch.py"));
+    if (!capture?.startsWith(windowsCommandPrefix + "py -3 -X utf8 -c ")
+      || !capture.includes(" || python -X utf8 -c ")
+      || !capture.includes(" || python3 -X utf8 -c ")) {
+      fail("Stop capture must use cmd.exe and UTF-8 in each Windows launcher attempt");
+    } else ok("Stop capture Windows launchers use UTF-8");
   }
 }
 

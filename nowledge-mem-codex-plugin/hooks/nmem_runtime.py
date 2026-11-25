@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -192,7 +193,32 @@ def cmd_exe_path(path: str) -> str:
     return "nmem.cmd" if Path(path).name.lower() == "nmem.cmd" else path
 
 
+@lru_cache(maxsize=4)
+def _resolved_api_base(configured_url: str) -> str:
+    from nmem_endpoint import EndpointError, api_base_from_endpoint, matches_server, resolve_endpoint
+
+    config = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser() / "config.toml"
+    try:
+        import tomllib
+
+        endpoint = tomllib.loads(config.read_text(encoding="utf-8")).get("mcp_servers", {}).get("nowledge-mem", {}).get("url")
+        if isinstance(endpoint, str) and matches_server(configured_url, endpoint):
+            return api_base_from_endpoint(endpoint)
+    except (ImportError, OSError, ValueError):
+        pass
+    try:
+        endpoint = resolve_endpoint(configured_url, os.environ.get("NMEM_API_KEY", "").strip())
+        return api_base_from_endpoint(endpoint)
+    except EndpointError:
+        return configured_url
+
+
 def build_nmem_command(nmem: str, *args: str) -> list[str]:
+    configured_url = os.environ.get("NMEM_API_URL", "").strip()
+    if configured_url and not any(arg in {"--api-url", "--api"} or arg.startswith(("--api-url=", "--api=")) for arg in args):
+        api_base = _resolved_api_base(configured_url)
+        if api_base != configured_url:
+            args = ("--api-url", api_base, *args)
     if nmem.lower().endswith((".cmd", ".bat")):
         if os.name == "nt":
             return [nmem, *args]

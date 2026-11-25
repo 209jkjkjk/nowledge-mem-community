@@ -851,7 +851,7 @@ class PackagedHookConfigTests(unittest.TestCase):
             self.assertIn("nmem-context.py", hook["commandWindows"])
             self.assertNotIn("${PLUGIN_ROOT}", hook["command"])
             self.assertNotIn("%PLUGIN_ROOT%", hook["commandWindows"])
-            self.assertTrue(hook["commandWindows"].startswith("py -3 -c "))
+            self.assertTrue(hook["commandWindows"].startswith('cmd.exe /d /s /c --% "py -3 -c '))
 
         session_timeout = hooks["SessionStart"][0]["hooks"][0]["timeout"]
         context_module = load_module("nmem_context_timeout", CONTEXT_MODULE_PATH)
@@ -898,8 +898,8 @@ class PackagedStopCommandTests(unittest.TestCase):
         if payload is None:
             payload = {"session_id": "synthetic-session"}
         return subprocess.run(
-            self.command if os.name == "nt" else ["/bin/sh", "-c", self.command],
-            shell=os.name == "nt",
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", self.command]
+            if os.name == "nt" else ["/bin/sh", "-c", self.command],
             input=json.dumps(payload),
             capture_output=True,
             text=True,
@@ -923,6 +923,23 @@ class PackagedStopCommandTests(unittest.TestCase):
     def test_manifest_uses_installed_hook_without_plugin_root(self):
         self.write_capture_hook(self.host_hook, "installed")
         self.assert_capture(self.run_command(), "installed")
+
+    @unittest.skipUnless(os.name == "nt", "Windows UTF-8 capture regression")
+    def test_manifest_decodes_chinese_stop_input_as_utf8(self):
+        self.write_capture_hook(self.host_hook, "installed")
+        self.env.pop("PYTHONIOENCODING", None)
+        payload = {"session_id": "synthetic-session", "last_assistant_message": "\u4e2d\u6587 \U0001f527"}
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", self.command],
+            input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            capture_output=True,
+            env=self.env,
+            cwd=self.temp_path,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["input"], payload)
 
     def test_manifest_uses_installed_hook_with_empty_plugin_root(self):
         self.env["PLUGIN_ROOT"] = ""
@@ -2085,6 +2102,24 @@ class InstallHookTests(unittest.TestCase):
         self.assertIn(self.module.MCP_MANAGED_END, updated)
         if os.name != "nt":
             self.assertEqual(self.module.CONFIG_FILE.stat().st_mode & 0o777, 0o600)
+
+    def test_install_remote_mcp_from_env_keeps_token_out_of_toml(self):
+        origin = "https://mem.example.com"
+        key = "nmem_synthetic_environment_only"
+        endpoint = origin + "/remote-api/mcp/"
+        self.module.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        approval = '[mcp_servers.nowledge-mem.tools.memory_add]\napproval_mode = "approve"'
+        self.module.CONFIG_FILE.write_text(approval + "\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"NMEM_API_URL": origin, "NMEM_API_KEY": key, "NMEM_AGENT_ID": "test-agent"}):
+            with mock.patch.object(self.module, "resolve_endpoint", return_value=endpoint) as resolve:
+                self.assertTrue(self.module.install_codex_mcp_config())
+            resolve.assert_called_once_with(origin, key)
+        config = self.module.CONFIG_FILE.read_text(encoding="utf-8")
+        self.assertIn(f'url = "{endpoint}"', config)
+        self.assertIn('bearer_token_env_var = "NMEM_API_KEY"', config)
+        self.assertIn('"X-Nmem-Agent-Id" = "NMEM_AGENT_ID"', config)
+        self.assertIn(approval, config)
+        self.assertNotIn(key, config)
 
     def test_install_codex_mcp_config_preserves_user_owned_mcp_override(self):
         self.module.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)

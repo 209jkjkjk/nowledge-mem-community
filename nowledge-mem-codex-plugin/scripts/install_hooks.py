@@ -23,6 +23,7 @@ if str(PLUGIN_HOOKS_DIR) not in sys.path:
 from nmem_runtime import build_nmem_command as _build_nmem_command
 from nmem_runtime import find_nmem_command as _find_nmem_command
 from nmem_runtime import windows_no_window_kwargs as _windows_no_window_kwargs
+from nmem_endpoint import EndpointError, resolve_endpoint
 
 
 CODEX_DIR = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
@@ -76,6 +77,10 @@ TOML_SECTION_HEADER_RE = re.compile(
 NOWLEDGE_MCP_SECTION_RE = re.compile(
     rf"^\s*\[\s*{TOML_MCP_SERVERS_KEY}\s*\.\s*{TOML_NOWLEDGE_MEM_KEY}"
     rf"(?:\s*\.\s*{TOML_KEY_SEGMENT})*\s*\]\s*(?:#.*)?$"
+)
+NOWLEDGE_MCP_TOOL_SECTION_RE = re.compile(
+    rf"^\s*\[\s*{TOML_MCP_SERVERS_KEY}\s*\.\s*{TOML_NOWLEDGE_MEM_KEY}"
+    rf"""\s*\.\s*(?:tools|"tools"|'tools')(?=\s*[.\]])"""
 )
 
 
@@ -147,6 +152,7 @@ def install_runtime_hook() -> None:
     if not SOURCE_NMEM_RUNTIME.exists():
         raise SystemExit(f"missing nmem runtime helper: {SOURCE_NMEM_RUNTIME}")
     shutil.copy2(SOURCE_NMEM_RUNTIME, INSTALLED_NMEM_RUNTIME)
+    shutil.copy2(SOURCE_NMEM_RUNTIME.with_name("nmem_endpoint.py"), INSTALLED_NMEM_RUNTIME.with_name("nmem_endpoint.py"))
     if not SOURCE_STOP_MAINTENANCE.exists():
         raise SystemExit(f"missing Stop maintenance adapter: {SOURCE_STOP_MAINTENANCE}")
     shutil.copy2(SOURCE_STOP_MAINTENANCE, INSTALLED_STOP_MAINTENANCE)
@@ -760,7 +766,11 @@ def _has_existing_unmanaged_nowledge_mcp(lines: list[str]) -> bool:
         if stripped == MCP_MANAGED_END:
             in_managed = False
             continue
-        if not in_managed and NOWLEDGE_MCP_SECTION_RE.match(stripped):
+        if (
+            not in_managed
+            and NOWLEDGE_MCP_SECTION_RE.match(stripped)
+            and not NOWLEDGE_MCP_TOOL_SECTION_RE.match(stripped)
+        ):
             return True
     return False
 
@@ -881,6 +891,34 @@ def _install_mcp_config_from_payload(payload: dict) -> bool:
 
 
 def install_codex_mcp_config() -> bool:
+    configured_url = os.environ.get("NMEM_API_URL", "").strip()
+    if configured_url:
+        key = os.environ.get("NMEM_API_KEY", "").strip()
+        if not key:
+            print("Codex MCP config: set NMEM_API_KEY before running setup.", file=sys.stderr)
+            return False
+        try:
+            endpoint = resolve_endpoint(configured_url, key)
+        except EndpointError as error:
+            print(f"Codex MCP config: {error}", file=sys.stderr)
+            return False
+        rendered = (
+            "[mcp_servers.nowledge-mem]\n"
+            f"url = {json.dumps(endpoint)}\n"
+            'bearer_token_env_var = "NMEM_API_KEY"\n'
+            'http_headers = { APP = "Codex" }'
+        )
+        identity_headers = {
+            header: name for header, name in (
+                ("X-Nmem-Agent-Id", "NMEM_AGENT_ID"),
+                ("X-Nmem-Host-Agent-Id", "NMEM_HOST_AGENT_ID"),
+                ("X-Nmem-Space-Id", "NMEM_SPACE"),
+            ) if name in os.environ
+        }
+        if identity_headers:
+            fields = ", ".join(f"{json.dumps(header)} = {json.dumps(name)}" for header, name in identity_headers.items())
+            rendered += "\nenv_http_headers = { " + fields + " }"
+        return _install_mcp_config_from_payload({"rendered": rendered})
     payload = _load_codex_mcp_payload()
     if payload is None:
         return False

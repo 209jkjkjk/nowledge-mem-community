@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.55] - Unreleased
+
+- Resolve the remote MCP endpoint from `NMEM_API_URL` and authenticate with `NMEM_API_KEY`.
+- Run Windows Hooks through `cmd.exe` and decode automatic capture input as UTF-8.
+
 ## [0.1.54] - Unreleased
 
 - Explain how to follow a Memory result to its source messages and refine keyword searches.
