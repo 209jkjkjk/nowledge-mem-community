@@ -895,7 +895,11 @@ def install_codex_mcp_config() -> bool:
     if configured_url:
         key = os.environ.get("NMEM_API_KEY", "").strip()
         if not key:
-            print("Codex MCP config: set NMEM_API_KEY before running setup.", file=sys.stderr)
+            print(
+                "error: Codex MCP config: NMEM_API_KEY is missing. "
+                "Set it in the shell running setup, then rerun this script.",
+                file=sys.stderr,
+            )
             return False
         try:
             endpoint = resolve_endpoint(configured_url, key)
@@ -919,6 +923,12 @@ def install_codex_mcp_config() -> bool:
             fields = ", ".join(f"{json.dumps(header)} = {json.dumps(name)}" for header, name in identity_headers.items())
             rendered += "\nenv_http_headers = { " + fields + " }"
         return _install_mcp_config_from_payload({"rendered": rendered})
+    print(
+        "error: Codex MCP config: NMEM_API_URL is missing. "
+        "For remote setup, set NMEM_API_URL and NMEM_API_KEY in this shell, "
+        "then rerun this script. Trying the existing nmem configuration.",
+        file=sys.stderr,
+    )
     payload = _load_codex_mcp_payload()
     if payload is None:
         return False

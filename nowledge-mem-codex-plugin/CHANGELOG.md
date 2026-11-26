@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.56] - Unreleased
+
+- Identify Codex setup explicitly during remote MCP discovery and explain which environment variables to set for remote setup.
+
 ## [0.1.55] - Unreleased
 
 - Resolve the remote MCP endpoint from `NMEM_API_URL` and authenticate with `NMEM_API_KEY`.

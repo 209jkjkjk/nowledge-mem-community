@@ -97,6 +97,7 @@ def resolve_endpoint(value: str, key: str) -> str:
     _, origin = _server_parts(value)
     headers = {
         "APP": "Codex",
+        "User-Agent": "Nowledge-Mem-Codex-Setup",
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
